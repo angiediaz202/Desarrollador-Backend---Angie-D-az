@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gestión de Flotas</title>
+  <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v2.6.1/mapbox-gl.css" />
+  <style>
+    #mapa {
+      height: 600px;
+      width: 100%;
+    }
+    form {
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Gestión de Flotas</h1>
+  <form id="formularioVehiculo">
+    <label for="idVehiculo">ID del Vehículo:</label>
+    <input type="text" id="idVehiculo" name="idVehiculo" required><br>
+    <label for="estado">Estado:</label>
+    <select id="estado" name="estado">
+      <option value="En ruta">En ruta</option>
+      <option value="Sin ruta">Sin ruta</option>
+    </select><br>
+    <label for="direccion">Dirección:</label>
+    <input type="text" id="direccion" name="direccion" required><br>
+    <label for="nivelGasolina">Nivel de Gasolina (%):</label>
+    <input type="number" id="nivelGasolina" name="nivelGasolina" required><br>
+    <label for="velocidadPromedio">Velocidad Promedio (km/h):</label>
+    <input type="number" id="velocidadPromedio" name="velocidadPromedio" required><br>
+    <label for="kilometraje">Kilometraje (km):</label>
+    <input type="number" id="kilometraje" name="kilometraje" required><br>
+    <button type="submit" id="btnAgregar">Agregar Vehículo</button>
+    <button type="button" id="btnActualizar">Actualizar Vehículo</button>
+  </form>
+  <div id="mapa"></div>
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.6.1/mapbox-gl.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js"></script>
+  <script>
+    async function inicializarMapa() {
+      const respuesta = await axios.get('/api/mapbox-token');
+      const tokenMapbox = respuesta.data.token;
+
+      mapboxgl.accessToken = tokenMapbox;
+      const mapa = new mapboxgl.Map({
+        container: 'mapa',
+        style: 'mapbox://styles/mapbox/streets-v11',
+        center: [-88.89653, 13.794185], // Coordenadas centradas en El Salvador
+        zoom: 8
+      });
+
+      async function obtenerVehiculos() {
+        try {
+          const respuesta = await axios.get('/api/vehiculos');
+          const vehiculos = respuesta.data;
+
+          vehiculos.forEach(vehiculo => {
+            vehiculo.ubicaciones.forEach((ubicacion, index) => {
+              const marcador = new mapboxgl.Marker()
+                .setLngLat([ubicacion.longitud, ubicacion.latitud])
+                .setPopup(new mapboxgl.Popup().setHTML(`
+                  <b>ID ${vehiculo.id}, Vehículo ${vehiculo.id}</b><br>
+                  Estado: ${vehiculo.estado}<br>
+                  Gasolina: ${vehiculo.rendimiento.nivelGasolina}%<br>
+                  Velocidad promedio: ${vehiculo.rendimiento.velocidadPromedio} km/h<br>
+                  Kilometraje: ${vehiculo.rendimiento.kilometraje} km
+                `))
+                .addTo(mapa);
+            });
+
+            if (vehiculo.ubicaciones.length > 1) {
+              const lineCoordinates = vehiculo.ubicaciones.map(ubicacion => [ubicacion.longitud, ubicacion.latitud]);
+
+              mapa.addLayer({
+                id: `ruta-${vehiculo.id}`,
+                type: 'line',
+                source: {
+                  type: 'geojson',
+                  data: {
+                    type: 'Feature',
+                    geometry: {
+                      type: 'LineString',
+                      coordinates: lineCoordinates
+                    }
+                  }
+                },
+                layout: {
+                  'line-join': 'round',
+                  'line-cap': 'round'
+                },
+                paint: {
+                  'line-color': '#888',
+                  'line-width': 4
+                }
+              });
+            }
+          });
+        } catch (error) {
+          console.error('Error al obtener vehículos:', error);
+        }
+      }
+
+      mapa.on('load', obtenerVehiculos);
+    }
+
+    inicializarMapa();
+
+    async function geocodeDireccion(direccion) {
+      const tokenMapbox = (await axios.get('/api/mapbox-token')).data.token;
+      const respuesta = await axios.get(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(direccion)}.json?access_token=${tokenMapbox}&country=SV`);
+      const datos = respuesta.data;
+      if (datos.features.length > 0) {
+        const [longitud, latitud] = datos.features[0].center;
+        return { latitud, longitud };
+      } else {
+        throw new Error('No se encontró la dirección');
+      }
+    }
+
+    document.getElementById('formularioVehiculo').addEventListener('submit', async function(event) {
+      event.preventDefault();
+
+      const idVehiculo = document.getElementById('idVehiculo').value;
+      const estado = document.getElementById('estado').value;
+      const direccion = document.getElementById('direccion').value;
+      const nivelGasolina = parseFloat(document.getElementById('nivelGasolina').value);
+      const velocidadPromedio = parseFloat(document.getElementById('velocidadPromedio').value);
+      const kilometraje = parseFloat(document.getElementById('kilometraje').value);
+
+      try {
+        const ubicacion = await geocodeDireccion(direccion);
+
+        const vehiculo = {
+          id: idVehiculo,
+          estado,
+          ubicacion,
+          rendimiento: {
+            nivelGasolina,
+            velocidadPromedio,
+            kilometraje
+          }
+        };
+
+        await axios.post('/api/vehiculos', vehiculo);
+        alert('Vehículo agregado correctamente');
+        window.location.reload();
+      } catch (error) {
+        console.error('Error al agregar vehículo:', error);
+        alert('Error al agregar vehículo. Verifique la dirección.');
+      }
+    });
+
+    document.getElementById('btnActualizar').addEventListener('click', async function() {
+      const idVehiculo = document.getElementById('idVehiculo').value;
+      const estado = document.getElementById('estado').value;
+      const direccion = document.getElementById('direccion').value;
+      const nivelGasolina = parseFloat(document.getElementById('nivelGasolina').value);
+      const velocidadPromedio = parseFloat(document.getElementById('velocidadPromedio').value);
+      const kilometraje = parseFloat(document.getElementById('kilometraje').value);
+
+      try {
+        const ubicacion = await geocodeDireccion(direccion);
+
+        const vehiculo = {
+          id: idVehiculo,
+          estado,
+          ubicacion,
+          rendimiento: {
+            nivelGasolina,
+            velocidadPromedio,
+            kilometraje
+          }
+        };
+
+        await axios.put(`/api/vehiculos/${idVehiculo}`, vehiculo);
+        alert('Vehículo actualizado correctamente');
+        window.location.reload();
+      } catch (error) {
+        console.error('Error al actualizar vehículo:', error);
+        alert('Error al actualizar vehículo. Verifique la dirección.');
+      }
+    });
+  </script>
+</body>
+</html>

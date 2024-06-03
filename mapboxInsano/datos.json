@@ -1,0 +1,29 @@
+[
+  {
+    "id": "1",
+    "estado": "En ruta",
+    "ubicacion": {
+      "latitud": 13.720361,
+      "longitud": -89.72774
+    },
+    "rendimiento": {
+      "nivelGasolina": 60,
+      "velocidadPromedio": 40,
+      "kilometraje": 5230
+    },
+    "ubicaciones": [
+      {
+        "latitud": 13.720361,
+        "longitud": -89.72774
+      },
+      {
+        "latitud": 13.481795,
+        "longitud": -88.183641
+      },
+      {
+        "latitud": 13.875813,
+        "longitud": -88.6282
+      }
+    ]
+  }
+]
